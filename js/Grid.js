@@ -101,4 +101,7 @@ class Grid {
 		// left
 		this.ctx.fillRect(0, 0, linewidth, cvsh)
 	}
+	_drawCell(x, y, linewidth) {
+		
+	}
 }
