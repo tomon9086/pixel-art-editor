@@ -1,2 +1,2 @@
 const grid = new Grid("#gridCanvas")
-grid.init()
+grid.init(50, 50)
