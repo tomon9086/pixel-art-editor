@@ -20,16 +20,22 @@ class Grid {
 		}
 		this.width = width !== undefined ? width : null
 		this.height = height !== undefined ? height : null
+		this.cells = []
 
 		this._cellpixel = {
 			width: undefined,
 			height: undefined
 		}
 		this._resolution = 1
+		this._events = []
 
 		this.Cell = class {
 			constructor(x, y) {
 				this.coord = {
+					x: undefined,
+					y: undefined
+				}
+				this.pixelCoord = {
 					x: undefined,
 					y: undefined
 				}
@@ -39,6 +45,8 @@ class Grid {
 					b: undefined,
 					a: undefined
 				}
+				this._width = 0
+				this._height = 0
 
 				this.x = x
 				this.y = y
@@ -47,15 +55,43 @@ class Grid {
 				return this.coord.x
 			}
 			set x(val) {
-				if(typeof +val !== "number" || isNaN(+val)) throw new Error(`Cell.x: value of "x" is invalid.`)
-				this.coord.x = val
+				if(typeof +val !== "number" || isNaN(+val)) throw new Error(`Cell.x: assigned value is invalid.`)
+				this.coord.x = +val
 			}
 			get y() {
 				return this.coord.y
 			}
 			set y(val) {
-				if(typeof +val !== "number" || isNaN(+val)) throw new Error(`Cell.y: value of "y" is invalid.`)
-				this.coord.y = val
+				if(typeof +val !== "number" || isNaN(+val)) throw new Error(`Cell.y: assigned value is invalid.`)
+				this.coord.y = +val
+			}
+			get px() {
+				return this.pixelCoord.x
+			}
+			set px(val) {
+				if(typeof +val !== "number" || isNaN(+val)) throw new Error(`Cell.px: assigned value is invalid.`)
+				this.pixelCoord.x = +val
+			}
+			get py() {
+				return this.pixelCoord.y
+			}
+			set py(val) {
+				if(typeof +val !== "number" || isNaN(+val)) throw new Error(`Cell.py: assigned value is invalid.`)
+				this.pixelCoord.y = +val
+			}
+			get width() {
+				return this._width
+			}
+			set width(val) {
+				if(typeof +val !== "number" || isNaN(+val)) throw new Error(`Cell.width: assigned value is invalid.`)
+				this._width = +val
+			}
+			get height() {
+				return this._height
+			}
+			set height(val) {
+				if(typeof +val !== "number" || isNaN(+val)) throw new Error(`Cell.height: assigned value is invalid.`)
+				this._height = +val
 			}
 			// get color() {
 			// }
@@ -85,11 +121,9 @@ class Grid {
 		if(typeof val !== "object") throw new Error(`Grid.options: assigned value is not an object.`)
 		for(let key in val) {
 			if(!this.opts.hasOwnProperty(key)) continue
-			switch(key) {
-				// case "outerFrameWidth":
-				// 	this._drawOutline(this.opts[key] = val[key])
-			}
+			this.opts[key] = val[key]
 		}
+		this.init()
 	}
 	get resolution() {
 		return this._resolution
@@ -119,11 +153,30 @@ class Grid {
 		this._calcSize()
 		this._drawCells()
 		this._drawOutline()
+		this._addEvent()
 		console.log("init!")
 	}
 	setResolution(val = 1) {
 		this.resolution = val
 		this.init()
+	}
+	cellLoc(px, py) {
+		if(typeof +px !== "number" || isNaN(+px)) throw new Error(`Grid.init: argument "px" is invalid.`)
+		if(typeof +py !== "number" || isNaN(+py)) throw new Error(`Grid.init: argument "py" is invalid.`)
+		const cvsw = this.cvs.width / this.resolution
+		const cvsh = this.cvs.height / this.resolution
+		const outerFrameWidth = this.opts.outerFrameWidth
+		const cellFrameWidth = this.opts.cellFrameWidth
+		px = +px
+		py = +py
+		const location = {
+			x: undefined,
+			y: undefined
+		}
+		if(px > outerFrameWidth && px < cvsw - outerFrameWidth) location.x = (px - (outerFrameWidth / 2)) / (this._cellpixel.width + cellFrameWidth) | 0
+		if(py > outerFrameWidth && py < cvsh - outerFrameWidth) location.y = (py - (outerFrameWidth / 2)) / (this._cellpixel.height + cellFrameWidth) | 0
+		if(location.x === undefined || location.y === undefined) return { x: undefined, y: undefined }
+		return location
 	}
 	_clear() {
 		const cvsw = this.cvs.width / this.resolution
@@ -182,12 +235,59 @@ class Grid {
 			const starty = frameWidth + this._cellpixel.height * y + linewidth * (y - 1)
 			this.ctx.fillRect(startx, starty, linewidth, this._cellpixel.height + linewidth)
 		}
+		const corner = {
+			x: frameWidth + (this._cellpixel.width + linewidth) * x,
+			y: frameWidth + (this._cellpixel.height + linewidth) * y
+		}
+		return corner
 	}
 	_drawCells() {
+		this._initCells()
 		for(let i = 0; i < this.width; i++) {
 			for(let j = 0; j < this.height; j++) {
-				this._drawCell(i, j)
+				const corner = this._drawCell(i, j)
+				// this.ctx.fillStyle = "rgb(255, 0, 0)"
+				// this.ctx.fillRect(corner.x + 1, corner.y + 1, 2, 2)
+				this.cells[i][j].px = corner.x
+				this.cells[i][j].py = corner.y
+				this.cells[i][j].width = this._cellpixel.width
+				this.cells[i][j].height = this._cellpixel.height
 			}
 		}
+	}
+	_initCells() {
+		this.cells = Array(this.width).fill(null)
+		for(let i in this.cells) {
+			this.cells[i] = Array(this.height).fill(null)
+			for(let j in this.cells[i]) {
+				this.cells[i][j] = new this.Cell(+i, +j)
+			}
+		}
+	}
+	_clickEvent(e) {
+		const cvsw = this.cvs.width / this.resolution
+		const cvsh = this.cvs.height / this.resolution
+		const clientRect = this.cvs.getBoundingClientRect()
+		const cvsposX = clientRect.left + window.pageXOffset
+		const cvsposY = clientRect.top + window.pageYOffset
+		const rx = e.pageX - cvsposX
+		const ry = e.pageY - cvsposY
+		console.log(this.cellLoc(rx, ry))
+	}
+	_removeAllEvents() {
+		for(let key in this._events) {
+			this.cvs.removeEventListener("click", this._events[key])
+			this.cvs.removeEventListener("mousedown", this._events[key])
+			this.cvs.removeEventListener("mousemove", this._events[key])
+			this.cvs.removeEventListener("mouseup", this._events[key])
+			this.cvs.removeEventListener("mouseover", this._events[key])
+		}
+		this._events.length = 0
+	}
+	_addEvent() {
+		this._removeAllEvents()
+		let cb = () => {}
+		this.cvs.addEventListener("mousemove", cb = this._clickEvent.bind(this))
+		this._events.push(cb)
 	}
 }
